@@ -1,0 +1,8 @@
+dominaria
+
+A utility for converting MtG card lists
+
+Currently supports converting CSV exports from Decked Builder
+(http://www.deckedbuilder.com/) to CSV files readable by Deckbox
+(http://deckbox.org/). It also supports preserving the tradelist count
+from a Deckbox CSV export.
