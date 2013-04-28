@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 
-import csv, optparse, sys
+import csv, datetime, getpass, io, optparse, sys
+import deckbox.http
 
 ######################################################################
 
@@ -9,13 +10,35 @@ def main():
 
     collection = Collection()
 
-    add_files_to_collection(filenames, collection)
+    add_files_by_name_to_collection(filenames, collection)
 
     if options.tradelist_file:
-        add_tradecounts_to_collection(options.tradelist_file, collection)
+        add_tradecounts_to_collection(open(options.tradelist_file), collection)
 
-    filename = options.output_file or "output.csv"
-    write_collection_to_filename(collection, filename)
+    if options.deckbox_import:
+        if options.deckbox_password:
+            password = options.deckbox_password
+        else:
+            password = getpass.getpass("Password for %s: " % options.deckbox_user)
+        session = deckbox.http.DeckboxSession(login=options.deckbox_user,
+                                              password=password,
+                                              debug=False)
+        old_inventory = session.get_inventory_csv_export_for_username(options.deckbox_user)
+        now = datetime.datetime.now()
+        with open(now.strftime("deckbox-inventory-backup-%Y%m%d-%H%M%S.csv"), "w") as backup:
+            backup.write(old_inventory)
+
+        if not options.tradelist_file:
+            add_tradecounts_to_collection(io.StringIO(old_inventory), collection)
+
+        outfile = io.StringIO()
+        write_collection_to_file(collection, outfile)
+        session.update_inventory(outfile.getvalue())
+
+    if options.output_file or not options.deckbox_import:
+        filename = options.output_file or "output.csv"
+        with open(filename, "w") as outfile:
+            write_collection_to_file(collection, outfile)
 
 ######################################################################
 
@@ -25,24 +48,31 @@ def parse_arguments():
                       help="write output to FILE", metavar="FILE")
     parser.add_option("-t", "--tradelist-file", dest="tradelist_file",
                       help="add tradelist counts from FILE", metavar="FILE")
+    parser.add_option("-d", "--deckbox-import", dest="deckbox_import",
+                      help="import collection to Deckbox while preserving tradecounts", action="store_true")
+    parser.add_option("-u", "--deckbox-user", dest="deckbox_user",
+                      help="Deckbox username", metavar="USERNAME")
+    parser.add_option("-p", "--deckbox-password", dest="deckbox_password",
+                      help="Deckbox password, necessary when importing", metavar="PASSWORD")
 
     return parser.parse_args()
 
-def add_files_to_collection(filenames, collection):
+def add_files_by_name_to_collection(filenames, collection):
     for filename in filenames:
-        with file(filename) as infile:
-            reader = get_reader_for_file(infile)
-            reader.add_cards_to_collection(collection)
+        with open(filename) as infile:
+            add_file_to_collection(infile, collection)
 
-def add_tradecounts_to_collection(filename, collection):
-    with file(filename) as infile:
-        reader = get_reader_for_file(infile)
-        reader.add_tradecounts_to_collection(collection)
+def add_file_to_collection(infile, collection):
+    reader = get_reader_for_file(infile)
+    reader.add_cards_to_collection(collection)
 
-def write_collection_to_filename(collection, filename):
-    with file(filename, "w") as outfile:
-        writer = DeckboxWriter(outfile)
-        writer.write_collection(collection)
+def add_tradecounts_to_collection(infile, collection):
+    reader = get_reader_for_file(infile)
+    reader.add_tradecounts_to_collection(collection)
+
+def write_collection_to_file(collection, outfile):
+    writer = DeckboxWriter(outfile)
+    writer.write_collection(collection)
 
 ######################################################################
 
@@ -67,7 +97,7 @@ class DeckedBuilderReader(CollectionReader):
     def __init__(self, infile):
         self.reader = csv.reader(infile)
     def cards(self):
-        header = self.reader.next()
+        header = next(self.reader)
         for line in self.reader:
             regular, foiled, name, edition = line[1:5]
             regular = int(regular)
@@ -83,7 +113,7 @@ class DeckboxReader(CollectionReader):
     def __init__(self, infile):
         self.reader = csv.reader(infile)
     def cards(self):
-        header = self.reader.next()
+        header = next(self.reader)
         count_index = header.index("Count")
         tradelist_count_index = header.index("Tradelist Count")
         name_index = header.index("Name")
@@ -155,20 +185,18 @@ class Collection(object):
         self.cards = {}
     def add_card(self, card):
         key = card.key();
-        if self.cards.has_key(key):
+        if key in self.cards:
             self.cards[key].count += card.count
         else:
             self.cards[key] = card
     def add_tradecount(self, other_card):
         key = other_card.key();
-        if self.cards.has_key(key):
+        if key in self.cards:
             card = self.cards[key]
             card.tradelist_count += other_card.tradelist_count
             card.tradelist_count = min(card.count, card.tradelist_count)
     def sorted_cards(self):
-        keys = self.cards.keys();
-        keys.sort()
-        for key in keys:
+        for key in sorted(self.cards.keys()):
             yield self.cards[key]
 
 class Card(object):

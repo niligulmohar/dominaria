@@ -9,4 +9,6 @@ setup(name = "dominaria",
       author_email = "nili@gulmohar.se",
       url = "https://github.com/niligulmohar/dominaria",
       license = "AGPLv3",
-      scripts = ["dominaria.py"])
+      scripts = ["dominaria.py"],
+      packages = ["deckbox"],
+      requires = ["beautifulsoup4"])
