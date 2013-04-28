@@ -53,7 +53,7 @@ def get_reader_for_file(file):
         return DeckboxReader(file)
     elif line.startswith("Total Qty,Reg Qty,Foil Qty,Card"):
         file.seek(0)
-        return DeckedEditorReader(file)
+        return DeckedBuilderReader(file)
 
 class CollectionReader(object):
     def add_cards_to_collection(self, collection):
@@ -63,7 +63,7 @@ class CollectionReader(object):
         for card in self.cards():
             collection.add_tradecount(card)
 
-class DeckedEditorReader(CollectionReader):
+class DeckedBuilderReader(CollectionReader):
     def __init__(self, infile):
         self.reader = csv.reader(infile)
     def cards(self):
